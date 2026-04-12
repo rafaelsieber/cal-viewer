@@ -103,8 +103,14 @@ def _parse_rrule(rule_str: str) -> dict:
     return result
 
 def _dt_to_date(dt) -> date | None:
-    """Convert datetime or date to date."""
+    """Convert datetime or date to date in local time.
+
+    Floating datetimes (no tzinfo) are already in local time — use as-is.
+    Aware datetimes (UTC or explicit TZID) are converted to local first.
+    """
     if isinstance(dt, datetime):
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(_local_tz())
         return dt.date()
     if isinstance(dt, date):
         return dt

@@ -355,8 +355,8 @@ def events_for_date(events: list[dict], target: date) -> list[dict]:
             # Convert to local time for sorting
             if dt.tzinfo:
                 dt = dt.astimezone(_local_tz())
-            return (0, dt.hour * 60 + dt.minute)
-        return (1, 0)  # all-day events last... or first
+            return (1, dt.hour * 60 + dt.minute)
+        return (0, 0)  # all-day events first
 
     result.sort(key=sort_key)
     return result
@@ -639,15 +639,43 @@ class CalViewerApp(Adw.Application):
         self.scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
         self.scroll.set_vexpand(True)
 
+        # Container that holds both all-day section and timed events list
+        self.events_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+
+        # All-day section (hidden when empty)
+        self.allday_list = Gtk.ListBox()
+        self.allday_list.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.allday_list.add_css_class("boxed-list")
+        self.allday_list.set_margin_start(12)
+        self.allday_list.set_margin_end(12)
+        self.allday_list.set_margin_top(8)
+        self.allday_list.set_margin_bottom(0)
+
+        self.allday_label = Gtk.Label(label="Dia todo")
+        self.allday_label.set_xalign(0.0)
+        self.allday_label.set_margin_start(16)
+        self.allday_label.set_margin_top(10)
+        self.allday_label.set_margin_bottom(4)
+        self.allday_label.add_css_class("heading")
+
+        self.allday_section = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.allday_section.append(self.allday_label)
+        self.allday_section.append(self.allday_list)
+        self.allday_section.set_visible(False)
+
+        self.events_box.append(self.allday_section)
+
+        # Timed events
         self.list_box = Gtk.ListBox()
         self.list_box.set_selection_mode(Gtk.SelectionMode.NONE)
         self.list_box.add_css_class("boxed-list")
         self.list_box.set_margin_start(12)
         self.list_box.set_margin_end(12)
-        self.list_box.set_margin_top(6)
+        self.list_box.set_margin_top(8)
         self.list_box.set_margin_bottom(12)
 
-        self.scroll.set_child(self.list_box)
+        self.events_box.append(self.list_box)
+        self.scroll.set_child(self.events_box)
 
         # ── Status / empty page ──
         self.status_page = Adw.StatusPage()
@@ -797,12 +825,14 @@ class CalViewerApp(Adw.Application):
         self.date_label.set_label(label)
         self.win.set_title(f"Cal Viewer — {d.strftime('%d/%m/%Y')}")
 
-        # Clear list
-        while True:
-            child = self.list_box.get_first_child()
-            if child is None:
-                break
-            self.list_box.remove(child)
+        # Clear both lists
+        for lb in (self.list_box, self.allday_list):
+            while True:
+                child = lb.get_first_child()
+                if child is None:
+                    break
+                lb.remove(child)
+        self.allday_section.set_visible(False)
 
         if not self.ics_path or not Path(self.ics_path).exists():
             self._show_status(
@@ -825,9 +855,21 @@ class CalViewerApp(Adw.Application):
 
         self.content_stack.set_visible_child_name("list")
 
-        for ev in evs:
+        allday_evs = [ev for ev in evs if not isinstance(ev.get("dtstart"), datetime)]
+        timed_evs  = [ev for ev in evs if isinstance(ev.get("dtstart"), datetime)]
+
+        if allday_evs:
+            self.allday_section.set_visible(True)
+            for ev in allday_evs:
+                row = self._build_event_row(ev)
+                self.allday_list.append(row)
+
+        for ev in timed_evs:
             row = self._build_event_row(ev)
             self.list_box.append(row)
+
+        # Hide timed list box if empty (no orphan margin)
+        self.list_box.set_visible(bool(timed_evs))
 
     def _build_event_row(self, ev: dict) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
@@ -844,18 +886,22 @@ class CalViewerApp(Adw.Application):
         hbox.set_margin_top(10)
         hbox.set_margin_bottom(10)
 
-        # Time badge
+        is_allday = not isinstance(ev.get("dtstart"), datetime)
+
+        # Time badge (hidden for all-day events)
         time_str = format_time(ev.get("dtstart"))
         time_lbl = Gtk.Label(label=time_str)
         time_lbl.set_width_chars(7)
         time_lbl.set_xalign(1.0)
         time_lbl.add_css_class("dim-label")
         time_lbl.add_css_class("caption")
+        time_lbl.set_visible(not is_allday)
         hbox.append(time_lbl)
 
-        # Separator dot
+        # Separator dot (hidden for all-day events)
         sep = Gtk.Label(label="·")
         sep.add_css_class("dim-label")
+        sep.set_visible(not is_allday)
         hbox.append(sep)
 
         # Text info

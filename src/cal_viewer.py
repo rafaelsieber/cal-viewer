@@ -13,6 +13,7 @@ from gi.repository import Gtk, Adw, Gio, GLib, Gdk
 
 import sys
 import os
+import uuid
 import json
 import re
 from datetime import date, datetime, timedelta, timezone
@@ -368,6 +369,180 @@ def format_time(dt) -> str:
         return dt.strftime("%H:%M")
     return "Dia todo"
 
+# ── ICS writer ───────────────────────────────────────────────────────────────
+
+def _ics_fold(line: str) -> str:
+    """Fold long lines per RFC 5545 (max 75 octets)."""
+    result = []
+    while len(line.encode("utf-8")) > 75:
+        # find safe split point
+        n = 75
+        while len(line[:n].encode("utf-8")) > 75:
+            n -= 1
+        result.append(line[:n])
+        line = " " + line[n:]
+    result.append(line)
+    return "\r\n".join(result)
+
+def _dt_to_ics(dt, tzid: str | None = None) -> str:
+    """Serialize a datetime/date to ICS property value (with TZID if given)."""
+    if isinstance(dt, date) and not isinstance(dt, datetime):
+        return f"VALUE=DATE:{dt.strftime('%Y%m%d')}"
+    assert isinstance(dt, datetime)
+    if tzid:
+        return f"TZID={tzid}:{dt.strftime('%Y%m%dT%H%M%S')}"
+    if dt.tzinfo is not None:
+        dt_utc = dt.astimezone(timezone.utc)
+        return f":{dt_utc.strftime('%Y%m%dT%H%M%S')}Z"
+    return f":{dt.strftime('%Y%m%dT%H%M%S')}"
+
+def _escape_ics(value: str) -> str:
+    """Escape special chars for ICS text properties."""
+    return value.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+def add_event_to_ics(filepath: str, event: dict) -> bool:
+    """Append a new VEVENT to an existing ICS file.
+    event dict keys: summary, dtstart (datetime/date), dtend (datetime/date),
+                     location (str, optional), description (str, optional),
+                     rrule_str (str, optional, raw RRULE value).
+    Returns True on success."""
+    try:
+        raw = Path(filepath).read_bytes().decode("utf-8", errors="replace")
+    except Exception:
+        return False
+
+    tzid = _local_tz_name()
+    uid  = str(uuid.uuid4())
+    now  = datetime.now(tz=_local_tz()).strftime("%Y%m%dT%H%M%S")
+
+    lines = []
+    lines.append("BEGIN:VEVENT")
+    lines.append(f"UID:{uid}")
+    lines.append(f"DTSTAMP;TZID={tzid}:{now}")
+
+    dtstart = event["dtstart"]
+    dtend   = event["dtend"]
+    val_start = _dt_to_ics(dtstart, tzid if isinstance(dtstart, datetime) else None)
+    val_end   = _dt_to_ics(dtend,   tzid if isinstance(dtend,   datetime) else None)
+    lines.append(_ics_fold(f"DTSTART;{val_start}"))
+    lines.append(_ics_fold(f"DTEND;{val_end}"))
+    lines.append(_ics_fold(f"SUMMARY:{_escape_ics(event.get('summary', ''))}"))
+
+    loc = event.get("location", "").strip()
+    if loc:
+        lines.append(_ics_fold(f"LOCATION:{_escape_ics(loc)}"))
+
+    desc = event.get("description", "").strip()
+    if desc:
+        lines.append(_ics_fold(f"DESCRIPTION:{_escape_ics(desc)}"))
+
+    rrule = event.get("rrule_str", "").strip()
+    if rrule:
+        lines.append(_ics_fold(f"RRULE:{rrule}"))
+
+    lines.append("END:VEVENT")
+
+    vevent_block = "\r\n".join(lines) + "\r\n"
+
+    # Insert before END:VCALENDAR
+    marker = "END:VCALENDAR"
+    idx = raw.upper().rfind(marker)
+    if idx == -1:
+        # No VCALENDAR wrapper — create one
+        new_raw = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//cal-viewer//EN\r\n" + vevent_block + "END:VCALENDAR\r\n"
+    else:
+        new_raw = raw[:idx] + vevent_block + raw[idx:]
+
+    try:
+        Path(filepath).write_bytes(new_raw.encode("utf-8"))
+        return True
+    except Exception:
+        return False
+
+def delete_event_from_ics(filepath: str, uid: str, occurrence_date: date | None = None) -> bool:
+    """Delete or exclude an event from the ICS file.
+    - If occurrence_date is None (non-recurring): remove the VEVENT block entirely.
+    - If occurrence_date is given (recurring): add EXDATE to the VEVENT.
+    Returns True on success."""
+    try:
+        raw = Path(filepath).read_bytes().decode("utf-8", errors="replace")
+    except Exception:
+        return False
+
+    unfolded = _unfold(raw)
+    lines_orig = raw.splitlines(keepends=True)
+
+    # Find the VEVENT block boundaries in the unfolded text, then map back to original
+    # Strategy: work on unfolded lines to find the block, rewrite raw
+    unfolded_lines = unfolded.splitlines(keepends=True)
+
+    # Locate the VEVENT with matching UID in unfolded lines
+    block_start = None
+    block_end   = None
+    for i, line in enumerate(unfolded_lines):
+        if line.strip().upper() == "BEGIN:VEVENT":
+            block_start = i
+        if block_start is not None and ":" in line:
+            prop, _, val = line.partition(":")
+            if prop.strip().upper() == "UID" and val.strip() == uid:
+                # found our block — now find END:VEVENT
+                for j in range(block_start, len(unfolded_lines)):
+                    if unfolded_lines[j].strip().upper() == "END:VEVENT":
+                        block_end = j
+                        break
+                break
+        if line.strip().upper() == "END:VEVENT":
+            block_start = None  # reset if no UID match before end
+
+    if block_start is None or block_end is None:
+        return False
+
+    block_lines = unfolded_lines[block_start : block_end + 1]
+
+    if occurrence_date is None:
+        # Remove the entire block
+        new_unfolded_lines = unfolded_lines[:block_start] + unfolded_lines[block_end + 1:]
+    else:
+        # Add EXDATE for this occurrence
+        exdate_val = occurrence_date.strftime("%Y%m%d")
+        # Check if EXDATE already exists in block — append to it or add new line
+        new_block = []
+        exdate_added = False
+        for line in block_lines:
+            stripped = line.rstrip("\r\n")
+            prop = stripped.split(":")[0].split(";")[0].upper()
+            if prop == "EXDATE" and not exdate_added:
+                # append to existing EXDATE
+                stripped = stripped.rstrip() + "," + exdate_val
+                new_block.append(stripped + "\r\n")
+                exdate_added = True
+            elif stripped.upper() == "END:VEVENT":
+                if not exdate_added:
+                    new_block.append(f"EXDATE;VALUE=DATE:{exdate_val}\r\n")
+                new_block.append(line)
+            else:
+                new_block.append(line)
+        new_unfolded_lines = unfolded_lines[:block_start] + new_block + unfolded_lines[block_end + 1:]
+
+    new_raw = "".join(new_unfolded_lines)
+    try:
+        Path(filepath).write_bytes(new_raw.encode("utf-8"))
+        return True
+    except Exception:
+        return False
+
+def _local_tz_name() -> str:
+    """Return the local timezone name string."""
+    tz = _local_tz()
+    if hasattr(tz, "key"):
+        return tz.key
+    # fixed-offset fallback
+    offset = tz.utcoffset(datetime.now())
+    total  = int(offset.total_seconds())
+    sign   = "+" if total >= 0 else "-"
+    h, m   = divmod(abs(total) // 60, 60)
+    return f"UTC{sign}{h:02d}:{m:02d}"
+
 # ── GTK4 Application ─────────────────────────────────────────────────────────
 
 class CalViewerApp(Adw.Application):
@@ -398,6 +573,11 @@ class CalViewerApp(Adw.Application):
         open_btn.set_tooltip_text("Selecionar arquivo ICS")
         open_btn.connect("clicked", self._on_open_ics)
         header.pack_start(open_btn)
+
+        new_btn = Gtk.Button(icon_name="list-add-symbolic")
+        new_btn.set_tooltip_text("Novo evento")
+        new_btn.connect("clicked", self._on_new_event)
+        header.pack_start(new_btn)
 
         today_btn = Gtk.Button(label="Hoje")
         today_btn.connect("clicked", self._go_today)
@@ -711,6 +891,15 @@ class CalViewerApp(Adw.Application):
             end_lbl.add_css_class("caption")
             hbox.append(end_lbl)
 
+        # Delete button
+        del_btn = Gtk.Button(icon_name="user-trash-symbolic")
+        del_btn.set_tooltip_text("Deletar evento")
+        del_btn.add_css_class("flat")
+        del_btn.add_css_class("circular")
+        del_btn.set_valign(Gtk.Align.CENTER)
+        del_btn.connect("clicked", lambda _, e=ev: self._on_delete_event(e))
+        hbox.append(del_btn)
+
         row.set_child(hbox)
         return row
 
@@ -719,6 +908,276 @@ class CalViewerApp(Adw.Application):
         self.status_page.set_description(desc)
         self.status_page.set_icon_name(icon)
         self.content_stack.set_visible_child_name("status")
+
+    # ── New event dialog ─────────────────────────────────────────────────────
+
+    def _on_new_event(self, _btn=None):
+        if not self.ics_path:
+            self._show_no_ics_toast()
+            return
+        self._open_event_dialog()
+
+    def _show_no_ics_toast(self):
+        toast = Adw.Toast(title="Selecione um arquivo ICS primeiro")
+        toast.set_timeout(3)
+        # wrap win content in overlay if not already
+        content = self.win.get_content()
+        if isinstance(content, Adw.ToastOverlay):
+            content.add_toast(toast)
+        else:
+            overlay = Adw.ToastOverlay()
+            self.win.set_content(overlay)
+            overlay.set_child(content)
+            overlay.add_toast(toast)
+
+    def _open_event_dialog(self, _btn=None):
+        d = self.current_date
+
+        dialog = Adw.Dialog()
+        dialog.set_title("Novo Evento")
+        dialog.set_content_width(420)
+
+        # ── Toolbar + header ──
+        toolbar_view = Adw.ToolbarView()
+        dlg_header = Adw.HeaderBar()
+        dlg_header.add_css_class("flat")
+
+        cancel_btn = Gtk.Button(label="Cancelar")
+        cancel_btn.connect("clicked", lambda _: dialog.close())
+        dlg_header.pack_start(cancel_btn)
+
+        save_btn = Gtk.Button(label="Salvar")
+        save_btn.add_css_class("suggested-action")
+        dlg_header.pack_end(save_btn)
+
+        toolbar_view.add_top_bar(dlg_header)
+
+        # ── Form ──
+        prefs = Adw.PreferencesGroup()
+        prefs.set_margin_top(12)
+        prefs.set_margin_bottom(12)
+        prefs.set_margin_start(12)
+        prefs.set_margin_end(12)
+
+        # Summary
+        summary_row = Adw.EntryRow()
+        summary_row.set_title("Título")
+        prefs.add(summary_row)
+
+        # Location
+        location_row = Adw.EntryRow()
+        location_row.set_title("Local")
+        prefs.add(location_row)
+
+        # All-day toggle
+        allday_row = Adw.SwitchRow()
+        allday_row.set_title("Dia todo")
+        prefs.add(allday_row)
+
+        # Date
+        date_row = Adw.ActionRow()
+        date_row.set_title("Data")
+        date_entry = Gtk.Entry()
+        date_entry.set_text(d.strftime("%d/%m/%Y"))
+        date_entry.set_width_chars(12)
+        date_entry.set_valign(Gtk.Align.CENTER)
+        date_row.add_suffix(date_entry)
+        prefs.add(date_row)
+
+        # Start time
+        start_row = Adw.ActionRow()
+        start_row.set_title("Início")
+        start_entry = Gtk.Entry()
+        start_entry.set_text("09:00")
+        start_entry.set_width_chars(6)
+        start_entry.set_valign(Gtk.Align.CENTER)
+        start_row.add_suffix(start_entry)
+        prefs.add(start_row)
+
+        # End time
+        end_row = Adw.ActionRow()
+        end_row.set_title("Fim")
+        end_entry = Gtk.Entry()
+        end_entry.set_text("10:00")
+        end_entry.set_width_chars(6)
+        end_entry.set_valign(Gtk.Align.CENTER)
+        end_row.add_suffix(end_entry)
+        prefs.add(end_row)
+
+        # Recurrence
+        rrule_row = Adw.ComboRow()
+        rrule_row.set_title("Repetição")
+        rrule_model = Gtk.StringList.new([
+            "Nunca", "Diariamente", "Semanalmente",
+            "Mensalmente", "Anualmente",
+        ])
+        rrule_row.set_model(rrule_model)
+        prefs.add(rrule_row)
+
+        # Description
+        desc_row = Adw.EntryRow()
+        desc_row.set_title("Descrição")
+        prefs.add(desc_row)
+
+        # Toggle time rows visibility
+        def on_allday_toggle(row, _param):
+            is_allday = row.get_active()
+            start_row.set_visible(not is_allday)
+            end_row.set_visible(not is_allday)
+        allday_row.connect("notify::active", on_allday_toggle)
+
+        # Error label
+        error_lbl = Gtk.Label()
+        error_lbl.add_css_class("error")
+        error_lbl.set_margin_bottom(8)
+        error_lbl.set_visible(False)
+
+        content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        content_box.append(prefs)
+        content_box.append(error_lbl)
+        toolbar_view.set_content(content_box)
+        dialog.set_child(toolbar_view)
+
+        def on_save(_btn):
+            # Validate & parse
+            summary = summary_row.get_text().strip()
+            if not summary:
+                error_lbl.set_label("O título é obrigatório.")
+                error_lbl.set_visible(True)
+                return
+
+            date_txt = date_entry.get_text().strip()
+            try:
+                ev_date = datetime.strptime(date_txt, "%d/%m/%Y").date()
+            except ValueError:
+                error_lbl.set_label("Data inválida. Use DD/MM/AAAA.")
+                error_lbl.set_visible(True)
+                return
+
+            is_allday = allday_row.get_active()
+
+            if is_allday:
+                dtstart = ev_date
+                dtend   = ev_date + timedelta(days=1)
+            else:
+                try:
+                    sh, sm = [int(x) for x in start_entry.get_text().strip().split(":")]
+                    eh, em = [int(x) for x in end_entry.get_text().strip().split(":")]
+                except Exception:
+                    error_lbl.set_label("Hora inválida. Use HH:MM.")
+                    error_lbl.set_visible(True)
+                    return
+                tz = _local_tz()
+                dtstart = datetime(ev_date.year, ev_date.month, ev_date.day, sh, sm, tzinfo=tz)
+                dtend   = datetime(ev_date.year, ev_date.month, ev_date.day, eh, em, tzinfo=tz)
+                if dtend <= dtstart:
+                    dtend += timedelta(days=1)
+
+            rrule_map = {
+                1: "FREQ=DAILY",
+                2: "FREQ=WEEKLY",
+                3: "FREQ=MONTHLY",
+                4: "FREQ=YEARLY",
+            }
+            rrule_str = rrule_map.get(rrule_row.get_selected(), "")
+
+            ev = {
+                "summary":     summary,
+                "dtstart":     dtstart,
+                "dtend":       dtend,
+                "location":    location_row.get_text().strip(),
+                "description": desc_row.get_text().strip(),
+                "rrule_str":   rrule_str,
+            }
+
+            if add_event_to_ics(self.ics_path, ev):
+                dialog.close()
+                self.events = parse_ics(self.ics_path)
+                self._refresh()
+            else:
+                error_lbl.set_label("Erro ao salvar no arquivo ICS.")
+                error_lbl.set_visible(True)
+
+        save_btn.connect("clicked", on_save)
+        dialog.present(self.win)
+
+    # ── Delete event ─────────────────────────────────────────────────────────
+
+    def _on_delete_event(self, ev: dict):
+        uid = ev.get("uid", "")
+        is_recurring = bool(ev.get("rrule"))
+
+        if not uid:
+            # No UID — cannot reliably delete; show message
+            self._show_toast("Evento sem UID — não é possível deletar.")
+            return
+
+        if is_recurring:
+            self._confirm_delete_recurring(ev)
+        else:
+            self._confirm_delete_simple(ev)
+
+    def _confirm_delete_simple(self, ev: dict):
+        dialog = Adw.AlertDialog(
+            heading="Deletar evento",
+            body=f"Remover \"{ev.get('summary', '')}\" permanentemente?",
+        )
+        dialog.add_response("cancel", "Cancelar")
+        dialog.add_response("delete", "Deletar")
+        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+
+        def on_response(_dlg, response):
+            if response == "delete":
+                if delete_event_from_ics(self.ics_path, ev["uid"]):
+                    self.events = parse_ics(self.ics_path)
+                    self._refresh()
+                else:
+                    self._show_toast("Erro ao deletar o evento.")
+        dialog.connect("response", on_response)
+        dialog.present(self.win)
+
+    def _confirm_delete_recurring(self, ev: dict):
+        dialog = Adw.AlertDialog(
+            heading="Deletar evento recorrente",
+            body=f"\"{ev.get('summary', '')}\" se repete. O que deseja fazer?",
+        )
+        dialog.add_response("cancel",     "Cancelar")
+        dialog.add_response("occurrence", "Só esta ocorrência")
+        dialog.add_response("all",        "Todas as ocorrências")
+        dialog.set_response_appearance("occurrence", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_response_appearance("all",        Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+
+        def on_response(_dlg, response):
+            if response == "occurrence":
+                if delete_event_from_ics(self.ics_path, ev["uid"], self.current_date):
+                    self.events = parse_ics(self.ics_path)
+                    self._refresh()
+                else:
+                    self._show_toast("Erro ao excluir a ocorrência.")
+            elif response == "all":
+                if delete_event_from_ics(self.ics_path, ev["uid"]):
+                    self.events = parse_ics(self.ics_path)
+                    self._refresh()
+                else:
+                    self._show_toast("Erro ao deletar o evento.")
+        dialog.connect("response", on_response)
+        dialog.present(self.win)
+
+    def _show_toast(self, message: str):
+        toast = Adw.Toast(title=message)
+        toast.set_timeout(3)
+        content = self.win.get_content()
+        if isinstance(content, Adw.ToastOverlay):
+            content.add_toast(toast)
+        else:
+            overlay = Adw.ToastOverlay()
+            self.win.set_content(overlay)
+            overlay.set_child(content)
+            overlay.add_toast(toast)
 
 
 def main():

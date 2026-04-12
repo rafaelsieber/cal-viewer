@@ -590,7 +590,6 @@ class CalViewerApp(Adw.Application):
 
     def _refresh(self):
         d = self.current_date
-        today = date.today()
 
         # Date label
         weekdays_pt = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
@@ -601,12 +600,6 @@ class CalViewerApp(Adw.Application):
         wd  = weekdays_pt[d.weekday()]
         mon = months_pt[d.month - 1]
         label = f"{wd}, {d.day} de {mon} de {d.year}"
-        if d == today:
-            label = f"Hoje  ·  {label}"
-        elif d == today - timedelta(days=1):
-            label = f"Ontem  ·  {label}"
-        elif d == today + timedelta(days=1):
-            label = f"Amanhã  ·  {label}"
 
         self.date_label.set_label(label)
         self.win.set_title(f"Cal Viewer — {d.strftime('%d/%m/%Y')}")

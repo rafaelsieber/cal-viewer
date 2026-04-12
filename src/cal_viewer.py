@@ -825,8 +825,12 @@ class CalViewerApp(Adw.Application):
 
     def _build_event_row(self, ev: dict) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
-        row.set_activatable(True)
-        row.connect("activate", lambda _, e=ev: self._show_event_detail(e))
+        row.set_activatable(False)
+
+        # Use GestureClick so activate fires regardless of selection mode
+        gesture = Gtk.GestureClick()
+        gesture.connect("released", lambda g, n, x, y, e=ev: self._show_event_detail(e))
+        row.add_controller(gesture)
 
         hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         hbox.set_margin_start(12)

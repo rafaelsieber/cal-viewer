@@ -728,16 +728,24 @@ class CalViewerApp(Adw.Application):
 
     # ── Navigation ──────────────────────────────────────────────────────────
 
+    def _reload_events(self):
+        """Reload ICS from disk before refreshing (picks up external changes)."""
+        if self.ics_path and Path(self.ics_path).exists():
+            self.events = parse_ics(self.ics_path)
+
     def _go_prev(self, _btn=None):
         self.current_date -= timedelta(days=1)
+        self._reload_events()
         self._refresh()
 
     def _go_next(self, _btn=None):
         self.current_date += timedelta(days=1)
+        self._reload_events()
         self._refresh()
 
     def _go_today(self, _btn=None):
         self.current_date = date.today()
+        self._reload_events()
         self._refresh()
 
     def _open_calendar_picker(self, _btn=None):
@@ -751,6 +759,7 @@ class CalViewerApp(Adw.Application):
         gdt = cal.get_date()
         self.current_date = date(gdt.get_year(), gdt.get_month(), gdt.get_day_of_month())
         self._cal_popover.popdown()
+        self._reload_events()
         self._refresh()
 
     def _on_key(self, _ctrl, keyval, _keycode, _state):

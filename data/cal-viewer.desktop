@@ -1,0 +1,13 @@
+[Desktop Entry]
+Name=Cal Viewer
+Name[pt_BR]=Cal Viewer
+Comment=Visualizador de compromissos ICS
+Comment[pt_BR]=Visualizador de compromissos ICS
+Exec=cal-viewer
+Icon=cal-viewer
+Terminal=false
+Type=Application
+Categories=Office;Calendar;
+Keywords=calendar;ics;agenda;compromissos;
+StartupNotify=true
+StartupWMClass=cal-viewer

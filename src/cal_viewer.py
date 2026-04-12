@@ -825,7 +825,8 @@ class CalViewerApp(Adw.Application):
 
     def _build_event_row(self, ev: dict) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
-        row.set_activatable(False)
+        row.set_activatable(True)
+        row.connect("activate", lambda _, e=ev: self._show_event_detail(e))
 
         hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         hbox.set_margin_start(12)
@@ -899,14 +900,11 @@ class CalViewerApp(Adw.Application):
             end_lbl.add_css_class("caption")
             hbox.append(end_lbl)
 
-        # Delete button
-        del_btn = Gtk.Button(icon_name="user-trash-symbolic")
-        del_btn.set_tooltip_text("Deletar evento")
-        del_btn.add_css_class("flat")
-        del_btn.add_css_class("circular")
-        del_btn.set_valign(Gtk.Align.CENTER)
-        del_btn.connect("clicked", lambda _, e=ev: self._on_delete_event(e))
-        hbox.append(del_btn)
+        # Chevron hint
+        chevron = Gtk.Image.new_from_icon_name("go-next-symbolic")
+        chevron.add_css_class("dim-label")
+        chevron.set_pixel_size(12)
+        hbox.append(chevron)
 
         row.set_child(hbox)
         return row
@@ -916,6 +914,229 @@ class CalViewerApp(Adw.Application):
         self.status_page.set_description(desc)
         self.status_page.set_icon_name(icon)
         self.content_stack.set_visible_child_name("status")
+
+    # ── Event detail / edit dialog ───────────────────────────────────────────
+
+    def _show_event_detail(self, ev: dict):
+        dialog = Adw.Dialog()
+        dialog.set_title("Detalhes do Evento")
+        dialog.set_content_width(460)
+        dialog.set_content_height(560)
+
+        toolbar_view = Adw.ToolbarView()
+        dlg_header = Adw.HeaderBar()
+        dlg_header.add_css_class("flat")
+
+        # Delete button in header
+        del_btn = Gtk.Button(icon_name="user-trash-symbolic")
+        del_btn.add_css_class("destructive-action")
+        del_btn.set_tooltip_text("Deletar evento")
+        del_btn.connect("clicked", lambda _: (dialog.close(), self._on_delete_event(ev)))
+        dlg_header.pack_start(del_btn)
+
+        save_btn = Gtk.Button(label="Salvar")
+        save_btn.add_css_class("suggested-action")
+        dlg_header.pack_end(save_btn)
+
+        toolbar_view.add_top_bar(dlg_header)
+
+        # ── Form (same fields as create, pre-filled) ──
+        prefs = Adw.PreferencesGroup()
+        prefs.set_margin_top(12)
+        prefs.set_margin_bottom(6)
+        prefs.set_margin_start(12)
+        prefs.set_margin_end(12)
+
+        dtstart = ev.get("dtstart")
+        dtend   = ev.get("dtend")
+        is_allday = isinstance(dtstart, date) and not isinstance(dtstart, datetime)
+
+        # Resolve local datetime for display
+        def to_local_dt(dt):
+            if isinstance(dt, datetime) and dt.tzinfo:
+                return dt.astimezone(_local_tz())
+            return dt
+
+        dtstart_local = to_local_dt(dtstart)
+        dtend_local   = to_local_dt(dtend)
+
+        ev_date = dtstart_local.date() if isinstance(dtstart_local, datetime) else (dtstart_local or date.today())
+
+        summary_row = Adw.EntryRow()
+        summary_row.set_title("Título")
+        summary_row.set_text(ev.get("summary", ""))
+        prefs.add(summary_row)
+
+        location_row = Adw.EntryRow()
+        location_row.set_title("Local")
+        location_row.set_text(ev.get("location", ""))
+        prefs.add(location_row)
+
+        allday_row = Adw.SwitchRow()
+        allday_row.set_title("Dia todo")
+        allday_row.set_active(is_allday)
+        prefs.add(allday_row)
+
+        date_row = Adw.ActionRow()
+        date_row.set_title("Data")
+        date_entry = Gtk.Entry()
+        date_entry.set_text(ev_date.strftime("%d/%m/%Y"))
+        date_entry.set_width_chars(12)
+        date_entry.set_valign(Gtk.Align.CENTER)
+        date_row.add_suffix(date_entry)
+        prefs.add(date_row)
+
+        start_row = Adw.ActionRow()
+        start_row.set_title("Início")
+        start_entry = Gtk.Entry()
+        start_entry.set_width_chars(6)
+        start_entry.set_valign(Gtk.Align.CENTER)
+        if isinstance(dtstart_local, datetime):
+            start_entry.set_text(dtstart_local.strftime("%H:%M"))
+        else:
+            start_entry.set_text("09:00")
+        start_row.add_suffix(start_entry)
+        start_row.set_visible(not is_allday)
+        prefs.add(start_row)
+
+        end_row = Adw.ActionRow()
+        end_row.set_title("Fim")
+        end_entry = Gtk.Entry()
+        end_entry.set_width_chars(6)
+        end_entry.set_valign(Gtk.Align.CENTER)
+        if isinstance(dtend_local, datetime):
+            end_entry.set_text(dtend_local.strftime("%H:%M"))
+        else:
+            end_entry.set_text("10:00")
+        end_row.add_suffix(end_entry)
+        end_row.set_visible(not is_allday)
+        prefs.add(end_row)
+
+        rrule_row = Adw.ComboRow()
+        rrule_row.set_title("Repetição")
+        rrule_model = Gtk.StringList.new([
+            "Nunca", "Diariamente", "Semanalmente",
+            "Mensalmente", "Anualmente",
+        ])
+        rrule_row.set_model(rrule_model)
+        # Pre-select current recurrence
+        rrule_freq = (ev.get("rrule") or {}).get("FREQ", "").upper()
+        freq_map = {"DAILY": 1, "WEEKLY": 2, "MONTHLY": 3, "YEARLY": 4}
+        rrule_row.set_selected(freq_map.get(rrule_freq, 0))
+        prefs.add(rrule_row)
+
+        # Description — multiline via TextView inside a scrolled window
+        desc_group = Adw.PreferencesGroup()
+        desc_group.set_title("Descrição")
+        desc_group.set_margin_top(6)
+        desc_group.set_margin_bottom(12)
+        desc_group.set_margin_start(12)
+        desc_group.set_margin_end(12)
+
+        desc_scroll = Gtk.ScrolledWindow()
+        desc_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        desc_scroll.set_min_content_height(120)
+        desc_scroll.set_vexpand(True)
+        desc_scroll.add_css_class("card")
+
+        desc_view = Gtk.TextView()
+        desc_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        desc_view.set_top_margin(8)
+        desc_view.set_bottom_margin(8)
+        desc_view.set_left_margin(10)
+        desc_view.set_right_margin(10)
+        desc_view.get_buffer().set_text(ev.get("description", ""))
+        desc_scroll.set_child(desc_view)
+        desc_group.add(desc_scroll)
+
+        def on_allday_toggle(row, _param):
+            visible = not row.get_active()
+            start_row.set_visible(visible)
+            end_row.set_visible(visible)
+        allday_row.connect("notify::active", on_allday_toggle)
+
+        error_lbl = Gtk.Label()
+        error_lbl.add_css_class("error")
+        error_lbl.set_margin_start(12)
+        error_lbl.set_margin_bottom(8)
+        error_lbl.set_xalign(0)
+        error_lbl.set_visible(False)
+
+        content_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        content_box.append(prefs)
+        content_box.append(desc_group)
+        content_box.append(error_lbl)
+
+        scroll = Gtk.ScrolledWindow()
+        scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroll.set_vexpand(True)
+        scroll.set_child(content_box)
+
+        toolbar_view.set_content(scroll)
+        dialog.set_child(toolbar_view)
+
+        def on_save(_btn):
+            summary = summary_row.get_text().strip()
+            if not summary:
+                error_lbl.set_label("O título é obrigatório.")
+                error_lbl.set_visible(True)
+                return
+
+            date_txt = date_entry.get_text().strip()
+            try:
+                ev_date_new = datetime.strptime(date_txt, "%d/%m/%Y").date()
+            except ValueError:
+                error_lbl.set_label("Data inválida. Use DD/MM/AAAA.")
+                error_lbl.set_visible(True)
+                return
+
+            allday = allday_row.get_active()
+            if allday:
+                new_dtstart = ev_date_new
+                new_dtend   = ev_date_new + timedelta(days=1)
+            else:
+                try:
+                    sh, sm = [int(x) for x in start_entry.get_text().strip().split(":")]
+                    eh, em = [int(x) for x in end_entry.get_text().strip().split(":")]
+                except Exception:
+                    error_lbl.set_label("Hora inválida. Use HH:MM.")
+                    error_lbl.set_visible(True)
+                    return
+                tz = _local_tz()
+                new_dtstart = datetime(ev_date_new.year, ev_date_new.month, ev_date_new.day, sh, sm, tzinfo=tz)
+                new_dtend   = datetime(ev_date_new.year, ev_date_new.month, ev_date_new.day, eh, em, tzinfo=tz)
+                if new_dtend <= new_dtstart:
+                    new_dtend += timedelta(days=1)
+
+            rrule_map = {1: "FREQ=DAILY", 2: "FREQ=WEEKLY", 3: "FREQ=MONTHLY", 4: "FREQ=YEARLY"}
+            rrule_str = rrule_map.get(rrule_row.get_selected(), "")
+
+            buf = desc_view.get_buffer()
+            description = buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+
+            uid = ev.get("uid")
+            if uid:
+                # Delete old, add updated
+                delete_event_from_ics(self.ics_path, uid)
+
+            new_ev = {
+                "summary":     summary,
+                "dtstart":     new_dtstart,
+                "dtend":       new_dtend,
+                "location":    location_row.get_text().strip(),
+                "description": description.strip(),
+                "rrule_str":   rrule_str,
+            }
+            if add_event_to_ics(self.ics_path, new_ev):
+                dialog.close()
+                self.events = parse_ics(self.ics_path)
+                self._refresh()
+            else:
+                error_lbl.set_label("Erro ao salvar no arquivo ICS.")
+                error_lbl.set_visible(True)
+
+        save_btn.connect("clicked", on_save)
+        dialog.present(self.win)
 
     # ── New event dialog ─────────────────────────────────────────────────────
 

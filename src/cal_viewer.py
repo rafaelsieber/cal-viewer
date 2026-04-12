@@ -742,8 +742,7 @@ class CalViewerApp(Adw.Application):
 
     def _open_calendar_picker(self, _btn=None):
         d = self.current_date
-        # GLib months: 0-based; Gtk.Calendar uses year/month/day properties
-        self._gtk_calendar.select_day(
+        self._gtk_calendar.set_date(
             GLib.DateTime.new_local(d.year, d.month, d.day, 0, 0, 0)
         )
         self._cal_popover.popup()

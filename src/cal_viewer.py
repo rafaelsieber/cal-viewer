@@ -818,7 +818,8 @@ class CalViewerApp(Adw.Application):
             self._show_status(
                 "Nenhum compromisso",
                 f"Sem eventos para {d.strftime('%d/%m/%Y')}",
-                "emblem-ok-symbolic",
+                "x-office-calendar-symbolic",
+                show_add_button=True,
             )
             return
 
@@ -918,10 +919,24 @@ class CalViewerApp(Adw.Application):
         row.set_child(hbox)
         return row
 
-    def _show_status(self, title: str, desc: str, icon: str):
+    def _show_status(self, title: str, desc: str, icon: str, show_add_button: bool = False):
         self.status_page.set_title(title)
         self.status_page.set_description(desc)
         self.status_page.set_icon_name(icon)
+
+        # Remove any existing child widget (button) from status page
+        existing = self.status_page.get_child()
+        if existing:
+            self.status_page.set_child(None)
+
+        if show_add_button and self.ics_path:
+            add_btn = Gtk.Button(label="Adicionar compromisso")
+            add_btn.add_css_class("suggested-action")
+            add_btn.add_css_class("pill")
+            add_btn.set_halign(Gtk.Align.CENTER)
+            add_btn.connect("clicked", self._on_new_event)
+            self.status_page.set_child(add_btn)
+
         self.content_stack.set_visible_child_name("status")
 
     # ── Event detail / edit dialog ───────────────────────────────────────────

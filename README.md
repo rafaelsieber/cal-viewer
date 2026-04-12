@@ -1,18 +1,26 @@
 # Cal Viewer
 
-Visualizador simples de compromissos de calendário ICS para GNOME, feito com Python + GTK4/Libadwaita.
+Visualizador e editor de compromissos de calendário ICS para GNOME, feito com Python + GTK4/Libadwaita.
 
 ## Funcionalidades
 
 - Exibe os compromissos do dia atual de um arquivo `.ics`
 - Navega entre dias com os botões `←` / `→` ou teclas de seta do teclado
+- Clique na data para abrir um calendário e saltar para qualquer dia
 - Botão **Hoje** para voltar rapidamente ao dia atual
-- Seleção do arquivo `.ics` via diálogo nativo (suporta pastas montadas no GNOME)
-- Salva automaticamente o caminho do arquivo nas configurações do usuário (`~/.config/cal-viewer/config.json`)
-- Suporte a eventos recorrentes (RRULE: diário, semanal, mensal, anual)
+- **Criar eventos** diretamente pelo app (título, data, horário, local, descrição, recorrência, dia todo)
+- **Editar eventos** clicando sobre eles na lista
+- **Deletar eventos** com suporte a recorrências (remover ocorrência única via EXDATE ou apagar tudo)
+- Tela vazia com botão de atalho para adicionar compromisso
+- Botão de **atualização manual** para recarregar o ICS do disco
+- Recarregamento automático do ICS a cada troca de dia (captura eventos criados externamente)
+- Seleção do arquivo `.ics` via diálogo nativo (suporta pastas montadas via GVFS/SFTP)
+- Salva automaticamente o caminho do arquivo nas configurações (`~/.config/cal-viewer/config.json`)
+- Parser ICS nativo (sem dependências externas além de stdlib + GTK)
+- Suporte a eventos recorrentes: RRULE diário, semanal, mensal e anual
 - Suporte a exceções de recorrência (EXDATE)
-- Exibe horário, local e descrição dos eventos
-- Integração com o lançador de aplicativos do GNOME (arquivo `.desktop` + ícone)
+- Suporte a TZID, UTC e floating datetimes
+- Integração com o lançador do GNOME (arquivo `.desktop` + ícone SVG)
 
 ## Requisitos
 
@@ -33,11 +41,13 @@ sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1 python3
 ## Instalação
 
 ```bash
-git clone https://github.com/rafaelortiz/cal-viewer.git
+git clone https://github.com/rafaelsieber/cal-viewer.git
 cd cal-viewer
 chmod +x install.sh
 ./install.sh
 ```
+
+O `install.sh` cria um virtualenv em `~/.local/share/cal-viewer/venv/` e usa um **symlink** para o diretório `src/` do projeto — assim, basta `git pull` para atualizar o app sem reinstalar.
 
 ## Desinstalação
 
@@ -49,24 +59,24 @@ chmod +x install.sh
 
 Após instalar, execute `cal-viewer` no terminal ou busque **Cal Viewer** no lançador do GNOME.
 
-Na primeira execução, clique no botão de abrir arquivo (ícone de pasta) e selecione o arquivo `.ics` desejado. O caminho é salvo automaticamente para as próximas execuções.
+Na primeira execução, clique no botão de abrir arquivo (ícone de pasta) e selecione o arquivo `.ics`. O caminho é salvo automaticamente para as próximas execuções.
 
 ### Atalhos de teclado
 
-| Tecla       | Ação             |
-|-------------|------------------|
-| `←`         | Dia anterior     |
-| `→`         | Próximo dia      |
-| `Home`      | Hoje             |
+| Tecla   | Ação         |
+|---------|--------------|
+| `←`     | Dia anterior |
+| `→`     | Próximo dia  |
+| `Home`  | Hoje         |
 
 ## Estrutura do projeto
 
 ```
 cal-viewer/
 ├── src/
-│   └── cal_viewer.py   # Aplicação principal
+│   └── cal_viewer.py    # Aplicação principal (parser ICS, UI GTK4/Adw)
 ├── icons/
-│   └── cal-viewer.svg  # Ícone da aplicação
+│   └── cal-viewer.svg   # Ícone da aplicação
 ├── data/
 │   └── cal-viewer.desktop
 ├── requirements.txt

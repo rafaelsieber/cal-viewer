@@ -579,6 +579,11 @@ class CalViewerApp(Adw.Application):
         new_btn.connect("clicked", self._on_new_event)
         header.pack_start(new_btn)
 
+        refresh_btn = Gtk.Button(icon_name="view-refresh-symbolic")
+        refresh_btn.set_tooltip_text("Recarregar calendário")
+        refresh_btn.connect("clicked", lambda _: (self._reload_events(), self._refresh()))
+        header.pack_end(refresh_btn)
+
         today_btn = Gtk.Button(label="Hoje")
         today_btn.connect("clicked", self._go_today)
         header.pack_end(today_btn)

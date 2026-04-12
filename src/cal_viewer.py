@@ -405,23 +405,48 @@ class CalViewerApp(Adw.Application):
 
         # ── Navigation bar ──
         nav_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
-        nav_box.add_css_class("linked")
-        nav_box.set_halign(Gtk.Align.CENTER)
+        nav_box.set_margin_start(8)
+        nav_box.set_margin_end(8)
 
         prev_btn = Gtk.Button(icon_name="go-previous-symbolic")
         prev_btn.set_tooltip_text("Dia anterior")
+        prev_btn.add_css_class("flat")
+        prev_btn.add_css_class("circular")
         prev_btn.connect("clicked", self._go_prev)
-
-        self.date_label = Gtk.Label()
-        self.date_label.set_width_chars(22)
-        self.date_label.add_css_class("heading")
 
         next_btn = Gtk.Button(icon_name="go-next-symbolic")
         next_btn.set_tooltip_text("Próximo dia")
+        next_btn.add_css_class("flat")
+        next_btn.add_css_class("circular")
         next_btn.connect("clicked", self._go_next)
 
+        # Date button (clicável → abre calendário)
+        self.date_btn = Gtk.Button()
+        self.date_btn.add_css_class("flat")
+        self.date_btn.set_tooltip_text("Selecionar data")
+        self.date_btn.set_hexpand(True)
+
+        self.date_label = Gtk.Label()
+        self.date_label.add_css_class("heading")
+        self.date_btn.set_child(self.date_label)
+        self.date_btn.connect("clicked", self._open_calendar_picker)
+
+        # ── Calendar popover ──
+        self._cal_popover = Gtk.Popover()
+        self._cal_popover.set_parent(self.date_btn)
+        self._cal_popover.set_position(Gtk.PositionType.BOTTOM)
+        self._cal_popover.set_autohide(True)
+
+        self._gtk_calendar = Gtk.Calendar()
+        self._gtk_calendar.set_margin_top(6)
+        self._gtk_calendar.set_margin_bottom(6)
+        self._gtk_calendar.set_margin_start(6)
+        self._gtk_calendar.set_margin_end(6)
+        self._gtk_calendar.connect("day-selected", self._on_calendar_day_selected)
+        self._cal_popover.set_child(self._gtk_calendar)
+
         nav_box.append(prev_btn)
-        nav_box.append(self.date_label)
+        nav_box.append(self.date_btn)
         nav_box.append(next_btn)
 
         # ── Event list ──
@@ -533,6 +558,20 @@ class CalViewerApp(Adw.Application):
 
     def _go_today(self, _btn=None):
         self.current_date = date.today()
+        self._refresh()
+
+    def _open_calendar_picker(self, _btn=None):
+        d = self.current_date
+        # GLib months: 0-based; Gtk.Calendar uses year/month/day properties
+        self._gtk_calendar.select_day(
+            GLib.DateTime.new_local(d.year, d.month, d.day, 0, 0, 0)
+        )
+        self._cal_popover.popup()
+
+    def _on_calendar_day_selected(self, cal):
+        gdt = cal.get_date()
+        self.current_date = date(gdt.get_year(), gdt.get_month(), gdt.get_day_of_month())
+        self._cal_popover.popdown()
         self._refresh()
 
     def _on_key(self, _ctrl, keyval, _keycode, _state):

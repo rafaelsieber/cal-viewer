@@ -18,6 +18,31 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+import time as _time
+
+def _local_tz() -> ZoneInfo:
+    """Return the system local timezone using the TZ env var or /etc/localtime."""
+    tz_name = os.environ.get("TZ")
+    if not tz_name:
+        # Read from timedatectl / symlink
+        lt = Path("/etc/localtime")
+        if lt.is_symlink():
+            target = str(lt.resolve())
+            # e.g. /usr/share/zoneinfo/America/Sao_Paulo
+            for marker in ("/zoneinfo/", "/zoneinfo\\"):
+                idx = target.find(marker)
+                if idx != -1:
+                    tz_name = target[idx + len(marker):]
+                    break
+    if tz_name:
+        try:
+            return ZoneInfo(tz_name)
+        except (ZoneInfoNotFoundError, KeyError):
+            pass
+    # Fallback: use UTC offset from time module (no DST name available)
+    offset_sec = -_time.timezone if not _time.daylight else -_time.altzone
+    from datetime import timezone as _tz
+    return _tz(timedelta(seconds=offset_sec))
 
 # ── Config ──────────────────────────────────────────────────────────────────
 
@@ -320,13 +345,9 @@ def events_for_date(events: list[dict], target: date) -> list[dict]:
     def sort_key(ev):
         dt = ev.get("dtstart")
         if isinstance(dt, datetime):
-            # Convert to local naive for sorting
+            # Convert to local time for sorting
             if dt.tzinfo:
-                try:
-                    local_tz = ZoneInfo("localtime")
-                    dt = dt.astimezone(local_tz)
-                except Exception:
-                    dt = dt.astimezone(timezone.utc)
+                dt = dt.astimezone(_local_tz())
             return (0, dt.hour * 60 + dt.minute)
         return (1, 0)  # all-day events last... or first
 
@@ -334,13 +355,10 @@ def events_for_date(events: list[dict], target: date) -> list[dict]:
     return result
 
 def format_time(dt) -> str:
-    """Format a dtstart for display."""
+    """Format a dtstart for display in local time."""
     if isinstance(dt, datetime):
-        try:
-            local_tz = ZoneInfo("localtime")
-            dt = dt.astimezone(local_tz)
-        except Exception:
-            pass
+        if dt.tzinfo:
+            dt = dt.astimezone(_local_tz())
         return dt.strftime("%H:%M")
     return "Dia todo"
 

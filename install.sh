@@ -61,9 +61,10 @@ exec "$INSTALL_DIR/venv/bin/python3" "$INSTALL_DIR/src/cal_viewer.py" "\$@"
 EOF
 chmod +x "$BIN_DIR/$APP_NAME"
 
-# ── 7. Instala o arquivo .desktop ────────────────────────────────────────────
+# ── 7. Instala o arquivo .desktop (com caminho absoluto no Exec) ─────────────
 echo "    Registrando entrada no menu..."
-cp "$SCRIPT_DIR/data/cal-viewer.desktop" "$DESKTOP_DIR/cal-viewer.desktop"
+sed "s|^Exec=cal-viewer|Exec=$BIN_DIR/$APP_NAME|" \
+    "$SCRIPT_DIR/data/cal-viewer.desktop" > "$DESKTOP_DIR/cal-viewer.desktop"
 
 # Atualiza caches do sistema de ícones e menus
 if command -v gtk-update-icon-cache &>/dev/null; then

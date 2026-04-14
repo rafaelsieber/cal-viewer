@@ -702,8 +702,16 @@ class CalViewerApp(Adw.Application):
         self.win.add_controller(key_ctrl)
 
         # Load ICS if saved
-        if self.ics_path and Path(self.ics_path).exists():
-            self._load_ics(self.ics_path)
+        if self.ics_path:
+            if Path(self.ics_path).exists():
+                self._load_ics(self.ics_path)
+            else:
+                # Path saved but file not accessible yet (e.g. SFTP not mounted)
+                self._show_status(
+                    "Arquivo não encontrado",
+                    "O arquivo ICS salvo não está acessível.\nMonte a pasta remota e clique em atualizar, ou selecione outro arquivo.",
+                    "network-offline-symbolic",
+                )
         else:
             self._show_status(
                 "Nenhum arquivo ICS selecionado",
@@ -768,17 +776,14 @@ class CalViewerApp(Adw.Application):
 
     def _go_prev(self, _btn=None):
         self.current_date -= timedelta(days=1)
-        self._reload_events()
         self._refresh()
 
     def _go_next(self, _btn=None):
         self.current_date += timedelta(days=1)
-        self._reload_events()
         self._refresh()
 
     def _go_today(self, _btn=None):
         self.current_date = date.today()
-        self._reload_events()
         self._refresh()
 
     def _open_calendar_picker(self, _btn=None):
@@ -792,7 +797,6 @@ class CalViewerApp(Adw.Application):
         gdt = cal.get_date()
         self.current_date = date(gdt.get_year(), gdt.get_month(), gdt.get_day_of_month())
         self._cal_popover.popdown()
-        self._reload_events()
         self._refresh()
 
     def _on_key(self, _ctrl, keyval, _keycode, _state):

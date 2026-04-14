@@ -819,6 +819,9 @@ class CalViewerApp(Adw.Application):
             self._reload_events()
             self._refresh()
             return True
+        if ctrl and keyval in (Gdk.KEY_w, Gdk.KEY_W):
+            self.win.close()
+            return True
         return False
 
     # ── Rendering ───────────────────────────────────────────────────────────
@@ -1003,11 +1006,10 @@ class CalViewerApp(Adw.Application):
     # ── Event detail / edit dialog ───────────────────────────────────────────
 
     def _attach_close_shortcut(self, dialog: Adw.Dialog):
-        """Attach Ctrl+W / Escape key handler to close an Adw.Dialog."""
+        """Attach Escape key handler to close an Adw.Dialog."""
         key_ctrl = Gtk.EventControllerKey()
         def _on_dlg_key(_ctrl, keyval, _code, state):
-            ctrl = bool(state & Gdk.ModifierType.CONTROL_MASK)
-            if (ctrl and keyval in (Gdk.KEY_w, Gdk.KEY_W)) or keyval == Gdk.KEY_Escape:
+            if keyval == Gdk.KEY_Escape:
                 dialog.close()
                 return True
             return False

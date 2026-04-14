@@ -809,7 +809,7 @@ class CalViewerApp(Adw.Application):
         if keyval == Gdk.KEY_Right:
             self._go_next()
             return True
-        if keyval == Gdk.KEY_Home:
+        if keyval == Gdk.KEY_Home or (ctrl and keyval in (Gdk.KEY_h, Gdk.KEY_H)):
             self._go_today()
             return True
         if ctrl and keyval in (Gdk.KEY_n, Gdk.KEY_N):

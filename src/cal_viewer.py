@@ -644,12 +644,13 @@ class CalViewerApp(Adw.Application):
 
         # All-day section (hidden when empty)
         self.allday_list = Gtk.ListBox()
-        self.allday_list.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.allday_list.set_selection_mode(Gtk.SelectionMode.BROWSE)
         self.allday_list.add_css_class("boxed-list")
         self.allday_list.set_margin_start(12)
         self.allday_list.set_margin_end(12)
         self.allday_list.set_margin_top(8)
         self.allday_list.set_margin_bottom(0)
+        self.allday_list.connect("row-activated", self._on_row_activated)
 
         self.allday_label = Gtk.Label(label="Dia todo")
         self.allday_label.set_xalign(0.0)
@@ -667,12 +668,13 @@ class CalViewerApp(Adw.Application):
 
         # Timed events
         self.list_box = Gtk.ListBox()
-        self.list_box.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.list_box.set_selection_mode(Gtk.SelectionMode.BROWSE)
         self.list_box.add_css_class("boxed-list")
         self.list_box.set_margin_start(12)
         self.list_box.set_margin_end(12)
         self.list_box.set_margin_top(8)
         self.list_box.set_margin_bottom(12)
+        self.list_box.connect("row-activated", self._on_row_activated)
 
         self.events_box.append(self.list_box)
         self.scroll.set_child(self.events_box)
@@ -799,7 +801,8 @@ class CalViewerApp(Adw.Application):
         self._cal_popover.popdown()
         self._refresh()
 
-    def _on_key(self, _ctrl, keyval, _keycode, _state):
+    def _on_key(self, _ctrl, keyval, _keycode, state):
+        ctrl = bool(state & Gdk.ModifierType.CONTROL_MASK)
         if keyval == Gdk.KEY_Left:
             self._go_prev()
             return True
@@ -808,6 +811,13 @@ class CalViewerApp(Adw.Application):
             return True
         if keyval == Gdk.KEY_Home:
             self._go_today()
+            return True
+        if ctrl and keyval in (Gdk.KEY_n, Gdk.KEY_N):
+            self._on_new_event()
+            return True
+        if ctrl and keyval in (Gdk.KEY_r, Gdk.KEY_R):
+            self._reload_events()
+            self._refresh()
             return True
         return False
 
@@ -875,14 +885,15 @@ class CalViewerApp(Adw.Application):
         # Hide timed list box if empty (no orphan margin)
         self.list_box.set_visible(bool(timed_evs))
 
+    def _on_row_activated(self, _listbox, row):
+        ev = getattr(row, "_ev", None)
+        if ev:
+            self._show_event_detail(ev)
+
     def _build_event_row(self, ev: dict) -> Gtk.ListBoxRow:
         row = Gtk.ListBoxRow()
-        row.set_activatable(False)
-
-        # Use GestureClick so activate fires regardless of selection mode
-        gesture = Gtk.GestureClick()
-        gesture.connect("released", lambda g, n, x, y, e=ev: self._show_event_detail(e))
-        row.add_controller(gesture)
+        row.set_activatable(True)
+        row._ev = ev  # store event reference for row-activated handler
 
         hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         hbox.set_margin_start(12)
@@ -991,11 +1002,24 @@ class CalViewerApp(Adw.Application):
 
     # ── Event detail / edit dialog ───────────────────────────────────────────
 
+    def _attach_close_shortcut(self, dialog: Adw.Dialog):
+        """Attach Ctrl+W / Escape key handler to close an Adw.Dialog."""
+        key_ctrl = Gtk.EventControllerKey()
+        def _on_dlg_key(_ctrl, keyval, _code, state):
+            ctrl = bool(state & Gdk.ModifierType.CONTROL_MASK)
+            if (ctrl and keyval in (Gdk.KEY_w, Gdk.KEY_W)) or keyval == Gdk.KEY_Escape:
+                dialog.close()
+                return True
+            return False
+        key_ctrl.connect("key-pressed", _on_dlg_key)
+        dialog.add_controller(key_ctrl)
+
     def _show_event_detail(self, ev: dict):
         dialog = Adw.Dialog()
         dialog.set_title("Detalhes do Evento")
         dialog.set_content_width(460)
         dialog.set_content_height(560)
+        self._attach_close_shortcut(dialog)
 
         toolbar_view = Adw.ToolbarView()
         dlg_header = Adw.HeaderBar()
@@ -1239,6 +1263,7 @@ class CalViewerApp(Adw.Application):
         dialog = Adw.Dialog()
         dialog.set_title("Novo Evento")
         dialog.set_content_width(420)
+        self._attach_close_shortcut(dialog)
 
         # ── Toolbar + header ──
         toolbar_view = Adw.ToolbarView()

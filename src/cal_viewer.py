@@ -548,7 +548,7 @@ def _local_tz_name() -> str:
 class CalViewerApp(Adw.Application):
     def __init__(self):
         super().__init__(
-            application_id="io.github.rafaelortiz.cal-viewer",
+            application_id="io.github.rafaelsieber.calviewer",
             flags=Gio.ApplicationFlags.FLAGS_NONE,
         )
         self.cfg      = load_config()

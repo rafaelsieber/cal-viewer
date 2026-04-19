@@ -10,4 +10,4 @@ Type=Application
 Categories=Office;Calendar;
 Keywords=calendar;ics;agenda;compromissos;
 StartupNotify=true
-StartupWMClass=cal-viewer
+StartupWMClass=io.github.rafaelsieber.calviewer

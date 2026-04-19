@@ -1,25 +1,39 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
-  <!-- Background rounded rect -->
-  <rect x="8" y="16" width="112" height="104" rx="14" ry="14" fill="#3584e4"/>
-  <!-- Top bar (calendar header) -->
-  <rect x="8" y="16" width="112" height="32" rx="14" ry="14" fill="#1c71d8"/>
-  <rect x="8" y="32" width="112" height="16" fill="#1c71d8"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" width="128" height="128">
+  <!-- FontAwesome-inspired calendar icon (fa-calendar-days style), monochrome -->
+  <!-- Outer body -->
+  <rect x="32" y="64" width="384" height="416" rx="40" ry="40" fill="#1a1a1a"/>
+  <!-- Header bar cutout (lighter) -->
+  <rect x="32" y="64" width="384" height="128" rx="40" ry="40" fill="#1a1a1a"/>
+  <rect x="32" y="144" width="384" height="48" fill="#1a1a1a"/>
+  <!-- Inner white area (body of calendar) -->
+  <rect x="56" y="208" width="336" height="248" rx="8" ry="8" fill="#ffffff"/>
   <!-- Ring hooks -->
-  <rect x="36" y="8" width="10" height="22" rx="5" ry="5" fill="#ffffff" opacity="0.9"/>
-  <rect x="82" y="8" width="10" height="22" rx="5" ry="5" fill="#ffffff" opacity="0.9"/>
-  <!-- Month label area -->
-  <text x="64" y="42" font-family="Sans" font-size="14" font-weight="bold" fill="white" text-anchor="middle">AGENDA</text>
-  <!-- Grid lines -->
-  <line x1="20" y1="70" x2="108" y2="70" stroke="white" stroke-width="1" opacity="0.3"/>
-  <line x1="20" y1="88" x2="108" y2="88" stroke="white" stroke-width="1" opacity="0.3"/>
-  <line x1="20" y1="106" x2="108" y2="106" stroke="white" stroke-width="1" opacity="0.3"/>
-  <!-- Day highlight -->
-  <rect x="18" y="55" width="26" height="22" rx="5" ry="5" fill="#ffffff" opacity="0.25"/>
-  <!-- Event lines -->
-  <rect x="52" y="60" width="50" height="6" rx="3" ry="3" fill="white" opacity="0.8"/>
-  <rect x="52" y="78" width="38" height="6" rx="3" ry="3" fill="white" opacity="0.6"/>
-  <rect x="52" y="96" width="44" height="6" rx="3" ry="3" fill="white" opacity="0.6"/>
-  <!-- Day number -->
-  <text x="31" y="71" font-family="Sans" font-size="16" font-weight="bold" fill="white" text-anchor="middle">12</text>
+  <rect x="128" y="24" width="40" height="88" rx="20" ry="20" fill="#1a1a1a"/>
+  <rect x="280" y="24" width="40" height="88" rx="20" ry="20" fill="#1a1a1a"/>
+  <!-- Header text dots (week days row) -->
+  <!-- Day grid: 3 rows x 4 cols of dots -->
+  <!-- Row 1 -->
+  <rect x="80"  y="236" width="44" height="36" rx="6" fill="#e0e0e0"/>
+  <rect x="140" y="236" width="44" height="36" rx="6" fill="#e0e0e0"/>
+  <rect x="200" y="236" width="44" height="36" rx="6" fill="#e0e0e0"/>
+  <rect x="260" y="236" width="44" height="36" rx="6" fill="#e0e0e0"/>
+  <rect x="320" y="236" width="44" height="36" rx="6" fill="#1a1a1a"/>
+  <!-- Row 2 -->
+  <rect x="80"  y="288" width="44" height="36" rx="6" fill="#e0e0e0"/>
+  <rect x="140" y="288" width="44" height="36" rx="6" fill="#1a1a1a"/>
+  <rect x="200" y="288" width="44" height="36" rx="6" fill="#e0e0e0"/>
+  <rect x="260" y="288" width="44" height="36" rx="6" fill="#e0e0e0"/>
+  <rect x="320" y="288" width="44" height="36" rx="6" fill="#e0e0e0"/>
+  <!-- Row 3 -->
+  <rect x="80"  y="340" width="44" height="36" rx="6" fill="#e0e0e0"/>
+  <rect x="140" y="340" width="44" height="36" rx="6" fill="#e0e0e0"/>
+  <rect x="200" y="340" width="44" height="36" rx="6" fill="#e0e0e0"/>
+  <rect x="260" y="340" width="44" height="36" rx="6" fill="#e0e0e0"/>
+  <rect x="320" y="340" width="44" height="36" rx="6" fill="#e0e0e0"/>
+  <!-- Row 4 -->
+  <rect x="80"  y="392" width="44" height="36" rx="6" fill="#e0e0e0"/>
+  <rect x="140" y="392" width="44" height="36" rx="6" fill="#e0e0e0"/>
+  <rect x="200" y="392" width="44" height="36" rx="6" fill="#e0e0e0"/>
+  <rect x="260" y="392" width="44" height="36" rx="6" fill="#e0e0e0"/>
 </svg>
